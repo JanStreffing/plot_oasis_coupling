@@ -1,4 +1,17 @@
 # Configuration file for the Sphinx documentation builder.
+import sys
+from unittest.mock import MagicMock
+
+# -- Mock modules that are difficult to install on ReadTheDocs ------------------
+class Mock(MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+        return MagicMock()
+
+# List of modules to mock for ReadTheDocs
+MOCK_MODULES = ['numpy', 'matplotlib', 'matplotlib.pyplot', 'xarray', 'cartopy', 
+                'cartopy.crs', 'dask', 'scipy', 'scipy.interpolate', 'netCDF4']
+sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 
 # -- Project information -----------------------------------------------------
 project = 'OASIS Coupling Flux Visualization'
