@@ -205,22 +205,26 @@ class FluxPlotter:
 </head>
 <body>
 <div class="tab">
-    <button class="tablinks active" onclick="openPlotType(event, 'StandardPlots')">Standard Resolution</button>
-    <button class="tablinks" onclick="openPlotType(event, 'HigherResPlots')">Higher Resolution</button>
+    <button class="tablinks active" onclick="openPlotType(event, 'NativeGridPlots')">Native Grid</button>
+    <button class="tablinks" onclick="openPlotType(event, 'RemappedPlots')">Remapped</button>
 </div>
 
-<div id="StandardPlots" class="tabcontent" style="display: block;">
-    <h1>Standard Resolution Flux Comparison</h1>
+<div id="NativeGridPlots" class="tabcontent" style="display: block;">
+    <h1>Native Grid Flux Comparison</h1>
     <div class="comparison">
 '''
         # Get all image files
         all_images = list(self.image_dir.glob('*.png'))
         
         # Create dictionaries to store files by prefix and variable
-        standard_files_33 = {}
-        standard_files_34 = {}
-        remapped_files_33 = {}
-        remapped_files_34 = {}
+        exp1_native_grid_files = {}
+        exp2_native_grid_files = {}
+        exp1_remapped_files = {}
+        exp2_remapped_files = {}
+        
+        # Track experiment names for HTML output
+        exp1_name = "flux_33"
+        exp2_name = "flux_34"
         
         # Debug: List all files
         if self.verbose:
@@ -232,68 +236,70 @@ class FluxPlotter:
             if self.verbose:
                 print(f"Processing image file: {file_name}")
             
-            # Determine if it's remapped or standard
+            # Determine if it's remapped or native grid
             is_remapped = f"_{self.resolution}deg" in file_name
             
-            # Determine prefix (flux_33 or flux_34)
+            # Extract experiment name and variable name
             if file_name.startswith("flux_33_"):
+                experiment = "flux_33"
                 if is_remapped:
                     # Extract variable name without resolution suffix
-                    var_name = file_name[len("flux_33_"):].rsplit(f"_{self.resolution}deg", 1)[0]
-                    remapped_files_33[var_name] = img_file
+                    var_name = file_name[len(f"{experiment}_"):].rsplit(f"_{self.resolution}deg", 1)[0]
+                    exp1_remapped_files[var_name] = img_file
                 else:
                     # Extract variable name
-                    var_name = file_name[len("flux_33_"):-4]  # Remove .png extension
-                    standard_files_33[var_name] = img_file
+                    var_name = file_name[len(f"{experiment}_"):-4]  # Remove .png extension
+                    exp1_native_grid_files[var_name] = img_file
             elif file_name.startswith("flux_34_"):
+                experiment = "flux_34"
                 if is_remapped:
-                    var_name = file_name[len("flux_34_"):].rsplit(f"_{self.resolution}deg", 1)[0]
-                    remapped_files_34[var_name] = img_file
+                    var_name = file_name[len(f"{experiment}_"):].rsplit(f"_{self.resolution}deg", 1)[0]
+                    exp2_remapped_files[var_name] = img_file
                 else:
-                    var_name = file_name[len("flux_34_"):-4]  # Remove .png extension
-                    standard_files_34[var_name] = img_file
+                    var_name = file_name[len(f"{experiment}_"):-4]  # Remove .png extension
+                    exp2_native_grid_files[var_name] = img_file
                     
         if self.verbose:
-            print(f"Standard flux_33 files: {list(standard_files_33.keys())}")
-            print(f"Standard flux_34 files: {list(standard_files_34.keys())}")
-            print(f"Remapped flux_33 files: {list(remapped_files_33.keys())}")
-            print(f"Remapped flux_34 files: {list(remapped_files_34.keys())}")
+            print(f"Native grid {exp1_name} files: {list(exp1_native_grid_files.keys())}")
+            print(f"Native grid {exp2_name} files: {list(exp2_native_grid_files.keys())}")
+            print(f"Remapped {exp1_name} files: {list(exp1_remapped_files.keys())}")
+            print(f"Remapped {exp2_name} files: {list(exp2_remapped_files.keys())}")
             
-        # Find common variable names for standard resolution
-        common_vars_standard = sorted(set(standard_files_33.keys()) & set(standard_files_34.keys()))
+        # Find common variable names for native grid
+        common_vars_native_grid = sorted(set(exp1_native_grid_files.keys()) & set(exp2_native_grid_files.keys()))
         
         if self.verbose:
-            print(f"Common standard variables: {common_vars_standard}")
+            print(f"Common native grid variables: {common_vars_native_grid}")
         
-        # Add standard resolution plots
-        standard_plots_added = 0
-        for var_name in common_vars_standard:
-            flux33_file = standard_files_33[var_name]
-            flux34_file = standard_files_34[var_name]
+        # Add native grid plots
+        native_grid_plots_added = 0
+        for var_name in common_vars_native_grid:
+            exp1_file = exp1_native_grid_files[var_name]
+            exp2_file = exp2_native_grid_files[var_name]
             
             if self.verbose:
-                print(f"Adding standard plot pair for {var_name}")
+                print(f"Adding native grid plot pair for {var_name}")
                 
             html_content += f'''
         <div class="pair">
             <div>
-                <h2>flux_33 - {var_name}</h2>
-                <img src="images/{flux33_file.name}" alt="flux_33 {var_name}">
+                <h2>{exp1_name} - {var_name}</h2>
+                <img src="images/{exp1_file.name}" alt="{exp1_name} {var_name}">
             </div>
             <div>
-                <h2>flux_34 - {var_name}</h2>
-                <img src="images/{flux34_file.name}" alt="flux_34 {var_name}">
+                <h2>{exp2_name} - {var_name}</h2>
+                <img src="images/{exp2_file.name}" alt="{exp2_name} {var_name}">
             </div>
         </div>
 '''
-            standard_plots_added += 1
+            native_grid_plots_added += 1
         
-        # If no standard plots were added, provide a message
-        if standard_plots_added == 0:
+        # If no native grid plots were added, provide a message
+        if native_grid_plots_added == 0:
             html_content += '''
         <div class="pair">
             <div>
-                <h2>No standard resolution plots available</h2>
+                <h2>No native grid plots available</h2>
                 <p>No matching plot pairs were found in the images directory.</p>
             </div>
         </div>
@@ -303,12 +309,12 @@ class FluxPlotter:
     </div>
 </div>
 
-<div id="HigherResPlots" class="tabcontent">
-    <h1>Higher Resolution Flux Comparison</h1>
+<div id="RemappedPlots" class="tabcontent">
+    <h1>Remapped Flux Comparison</h1>
     <div class="comparison">
 '''
         # Find common variable names for remapped files
-        common_vars_remapped = sorted(set(remapped_files_33.keys()) & set(remapped_files_34.keys()))
+        common_vars_remapped = sorted(set(exp1_remapped_files.keys()) & set(exp2_remapped_files.keys()))
         
         if self.verbose:
             print(f"Common remapped variables: {common_vars_remapped}")
@@ -316,8 +322,8 @@ class FluxPlotter:
         # Add higher resolution plots
         higher_res_plots_added = 0
         for var_name in common_vars_remapped:
-            flux33_file = remapped_files_33[var_name]
-            flux34_file = remapped_files_34[var_name]
+            exp1_file = exp1_remapped_files[var_name]
+            exp2_file = exp2_remapped_files[var_name]
             
             if self.verbose:
                 print(f"Adding remapped plot pair for {var_name}")
@@ -325,12 +331,12 @@ class FluxPlotter:
             html_content += f'''
         <div class="pair">
             <div>
-                <h2>flux_33 - {var_name} ({self.resolution}° grid)</h2>
-                <img src="images/{flux33_file.name}" alt="flux_33 {var_name} {self.resolution} degree">
+                <h2>{exp1_name} - {var_name} ({self.resolution}° grid)</h2>
+                <img src="images/{exp1_file.name}" alt="{exp1_name} {var_name} {self.resolution} degree">
             </div>
             <div>
-                <h2>flux_34 - {var_name} ({self.resolution}° grid)</h2>
-                <img src="images/{flux34_file.name}" alt="flux_34 {var_name} {self.resolution} degree">
+                <h2>{exp2_name} - {var_name} ({self.resolution}° grid)</h2>
+                <img src="images/{exp2_file.name}" alt="{exp2_name} {var_name} {self.resolution} degree">
             </div>
         </div>
 '''
@@ -341,7 +347,7 @@ class FluxPlotter:
             html_content += '''
         <div class="pair">
             <div>
-                <h2>No higher resolution plots available</h2>
+                <h2>No remapped plots available</h2>
                 <p>No remapped plot pairs were found in the images directory.</p>
             </div>
         </div>
@@ -512,7 +518,7 @@ function openPlotType(evt, plotType) {{
         # Skip grids file and mesh diagnostic file
         if nc_file.name == 'grids.nc' or nc_file.name == 'fesom.mesh.diag.nc':
             return
-            
+
         self.print_memory_usage(f"Before processing {nc_file.name}")
 
         # Determine coordinate type based on filename prefix
@@ -644,22 +650,17 @@ function openPlotType(evt, plotType) {{
         Parameters:
         -----------
         nc_file : Path
-            Path to the netCDF file
+            Path to the source netCDF file
         var_name : str
-            Variable name to plot
-        lon : numpy.ndarray
+            Name of the variable to plot
+        lon : np.ndarray
             Longitude values
-        lat : numpy.ndarray
+        lat : np.ndarray
             Latitude values
-        var_data : numpy.ndarray
-            Variable data array
+        var_data : np.ndarray
+            Variable data to plot
         is_remapped : bool
-            Whether the data has been remapped to a regular grid
-            
-        Returns:
-        --------
-        Path
-            Path to the output image file
+            Whether this is remapped data (True) or native grid data (False)
         """
         self.print_memory_usage(f"Start of _create_plot for {nc_file.name}")
         
@@ -689,8 +690,12 @@ function openPlotType(evt, plotType) {{
             if self.verbose:
                 print(f"Final array shapes: lon={plot_lon.shape}, lat={plot_lat.shape}, var_data={var_data.shape}")
         
-        # Create the output filename
-        output_filename = self.image_dir / f"{nc_file.parent.name}_{var_name}{'_' + str(self.resolution) + 'deg' if is_remapped else ''}.png"
+        # Create output filename
+        folder_name = nc_file.parent.name
+        if is_remapped:
+            output_filename = self.image_dir / f"{folder_name}_{var_name}_{self.resolution}deg.png"
+        else:
+            output_filename = self.image_dir / f"{folder_name}_{var_name}.png"
         
         # Create a new figure and axis for each plot
         fig = plt.figure(figsize=(10, 6), dpi=300)
@@ -788,7 +793,7 @@ function openPlotType(evt, plotType) {{
             fig.colorbar(cs, ax=ax, orientation='horizontal', pad=0.05, label=var_name)
         
         # Add title
-        ax.set_title(f"{nc_file.parent.name}: {var_name}{' (remapped)' if is_remapped else ''}")
+        ax.set_title(f"{folder_name}: {var_name}{' (remapped)' if is_remapped else ''}")
         
         # Save the figure with consistent DPI and close it explicitly
         fig.savefig(output_filename, dpi=300, bbox_inches='tight')
@@ -824,7 +829,9 @@ if __name__ == "__main__":
             print(f"Processing folder: {args.folder}")
         plotter.process_folder(args.folder, max_files=args.max_files)
     else:
-        for folder in ['flux_33', 'flux_34']:
+        # Use generic experiment folder names instead of hardcoded values
+        experiment_folders = ['flux_33', 'flux_34']
+        for folder in experiment_folders:
             if args.verbose:
                 print(f"Processing folder: {folder}")
             plotter.process_folder(folder, max_files=args.max_files)

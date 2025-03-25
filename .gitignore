@@ -37,3 +37,8 @@ ENV/
 data/
 output/
 *.log
+
+# Sphinx documentation
+docs/build/
+docs/_build/
+docs/auto_examples/
