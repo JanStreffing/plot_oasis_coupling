@@ -109,8 +109,261 @@ class FluxPlotter:
         
         return remapped_data
     
-    def generate_html(self):
-        """Generate an HTML comparison page of all plotted files."""
+    def generate_html(self, comparison_folders=None):
+        """Generate an HTML page of plotted files.
+        
+        This is a dispatcher function that calls the appropriate HTML generation
+        function based on the number of folders.
+        """
+        # Get all image files
+        all_images = list(self.image_dir.glob('*.png'))
+        
+        # Determine if we're in single folder mode or comparison mode
+        if comparison_folders:
+            if len(comparison_folders) == 1:
+                self.generate_html_single(all_images, comparison_folders[0])
+            else:
+                self.generate_html_comparison(all_images, comparison_folders)
+        else:
+            # Auto-detect mode based on available folders
+            experiment_names = sorted(list(self._extract_experiment_names_from_images(all_images)))
+            
+            if len(experiment_names) == 1:
+                self.generate_html_single(all_images, experiment_names[0])
+            else:
+                self.generate_html_comparison(all_images, experiment_names[:2] if len(experiment_names) >= 2 else None)
+        
+        if self.verbose:
+            print(f"Comparison HTML generated at: {self.output_dir / 'comparison.html'}")
+    
+    def generate_html_single(self, all_images, folder_name):
+        """Generate an HTML page for a single folder of images."""
+        if self.verbose:
+            print(f"Single folder mode: {folder_name}")
+            
+        html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+<title>{folder_name} Flux Visualization</title>
+<style>
+    /* Styles for the single folder HTML */
+    body {{
+        font-family: Arial, sans-serif;
+        background-color: #f5f5f5;
+        margin: 0;
+        padding: 20px;
+    }}
+    h1, h2 {{
+        color: #333;
+    }}
+    h1 {{
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 10px;
+    }}
+    .single-view {{
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        align-items: center;
+    }}
+    .plot-item {{
+        background: white;
+        padding: 15px;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        width: 80%;
+        max-width: 900px;
+        text-align: center;
+    }}
+    img {{
+        max-width: 100%;
+        height: auto;
+        border: 1px solid #ddd;
+    }}
+    .stats {{
+        background: white;
+        padding: 15px;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        margin-top: 20px;
+    }}
+    .toggle {{
+        cursor: pointer;
+        color: #06c;
+        text-decoration: underline;
+    }}
+    .skipped-list {{
+        display: none;
+        margin-top: 10px;
+        padding: 10px;
+        background: #fff;
+        border: 1px solid #ddd;
+    }}
+    /* Tab styles */
+    .tab {{
+        overflow: hidden;
+        border: 1px solid #ccc;
+        background-color: #f1f1f1;
+        margin-bottom: 20px;
+    }}
+    .tab button {{
+        background-color: inherit;
+        float: left;
+        border: none;
+        outline: none;
+        cursor: pointer;
+        padding: 14px 16px;
+        transition: 0.3s;
+        font-size: 16px;
+    }}
+    .tab button:hover {{
+        background-color: #ddd;
+    }}
+    .tab button.active {{
+        background-color: #ccc;
+    }}
+    .tabcontent {{
+        display: none;
+        padding: 6px 12px;
+        border: 1px solid #ccc;
+        border-top: none;
+    }}
+</style>
+</head>
+<body>
+<h1>{folder_name} Flux Visualization</h1>
+
+<div class="tab">
+    <button class="tablinks active" onclick="openPlotType(event, 'NativeGridPlots')">Native Grid</button>
+    <button class="tablinks" onclick="openPlotType(event, 'RemappedPlots')">Remapped</button>
+</div>
+
+<div id="NativeGridPlots" class="tabcontent" style="display: block;">
+    <h1>Native Grid Plots</h1>
+    <div class="single-view">
+'''
+        
+        # Create dictionaries to store files by prefix and variable
+        native_grid_files = {}
+        remapped_files = {}
+        
+        # Debug: List all files
+        if self.verbose:
+            print(f"Found {len(all_images)} images in directory: {self.image_dir}")
+            
+        # Categorize files
+        for img_file in all_images:
+            file_name = img_file.name
+            if self.verbose:
+                print(f"Processing image file: {file_name}")
+            
+            # Determine if it's remapped or native grid
+            is_remapped = f"_{self.resolution}deg" in file_name
+            
+            # Extract experiment name and variable name
+            if file_name.startswith(f"{folder_name}_"):
+                if is_remapped:
+                    # Extract variable name without resolution suffix
+                    var_name = file_name[len(f"{folder_name}_"):].rsplit(f"_{self.resolution}deg", 1)[0]
+                    remapped_files[var_name] = img_file
+                else:
+                    # Extract variable name
+                    var_name = file_name[len(f"{folder_name}_"):-4]  # Remove .png extension
+                    native_grid_files[var_name] = img_file
+        
+        # Add native grid plots
+        if self.verbose:
+            print(f"Native grid {folder_name} files: {list(native_grid_files.keys())}")
+        
+        for var_name, img_file in sorted(native_grid_files.items()):
+            if self.verbose:
+                print(f"Adding native grid plot for {var_name}")
+                
+            html_content += f'''
+        <div class="plot-item">
+            <h2>{var_name}</h2>
+            <img src="images/{img_file.name}" alt="{folder_name} {var_name}">
+        </div>
+'''
+        
+        # Add remapped content section
+        html_content += '''
+    </div>
+</div>
+
+<div id="RemappedPlots" class="tabcontent">
+    <h1>Remapped Plots</h1>
+    <div class="single-view">
+'''
+        
+        # Add remapped plots
+        if self.verbose:
+            print(f"Remapped {folder_name} files: {list(remapped_files.keys())}")
+            
+        for var_name, img_file in sorted(remapped_files.items()):
+            if self.verbose:
+                print(f"Adding remapped plot for {var_name}")
+                
+            html_content += f'''
+        <div class="plot-item">
+            <h2>{var_name} ({self.resolution}° grid)</h2>
+            <img src="images/{img_file.name}" alt="{folder_name} {var_name} {self.resolution} degree">
+        </div>
+'''
+        
+        # Build the skipped files list
+        skipped_files_html = ""
+        for file in sorted(self.skipped_files):
+            skipped_files_html += f"<li>{file}</li>\n"
+            
+        # Add stats and skipped files section with proper escaping for JavaScript
+        html_content += f'''
+    </div>
+</div>
+
+<div class="stats">
+    <p>Files plotted: {len(self.plotted_files)}, Files skipped: {len(self.skipped_files)}</p>
+    <span class="toggle" onclick="toggleSkippedList()">Show/hide skipped files</span>
+    <div id="skippedList" class="skipped-list">
+        <ul>
+            {skipped_files_html}
+        </ul>
+    </div>
+</div>
+
+<script>
+function openPlotType(evt, plotType) {{
+    var i, tabcontent, tablinks;
+    tabcontent = document.getElementsByClassName("tabcontent");
+    for (i = 0; i < tabcontent.length; i++) {{
+        tabcontent[i].style.display = "none";
+    }}
+    tablinks = document.getElementsByClassName("tablinks");
+    for (i = 0; i < tablinks.length; i++) {{
+        tablinks[i].className = tablinks[i].className.replace(" active", "");
+    }}
+    document.getElementById(plotType).style.display = "block";
+    evt.currentTarget.className += " active";
+}}
+
+function toggleSkippedList() {{
+    var list = document.getElementById("skippedList");
+    if (list.style.display === "block") {{
+        list.style.display = "none";
+    }} else {{
+        list.style.display = "block";
+    }}
+}}
+</script>
+</body>
+</html>'''
+
+        # Write the HTML file
+        with open(self.output_dir / 'comparison.html', 'w') as f:
+            f.write(html_content)
+            
+    def generate_html_comparison(self, all_images, comparison_folders=None):
+        """Generate an HTML comparison page for two folders."""
         html_content = '''<!DOCTYPE html>
 <html>
 <head>
@@ -213,18 +466,38 @@ class FluxPlotter:
     <h1>Native Grid Flux Comparison</h1>
     <div class="comparison">
 '''
-        # Get all image files
-        all_images = list(self.image_dir.glob('*.png'))
+        
+        # If comparison folders are specified, use them directly
+        if comparison_folders and len(comparison_folders) >= 2:
+            exp1_name = comparison_folders[0]
+            exp2_name = comparison_folders[1]
+            
+            if self.verbose:
+                print(f"Using specified folders for comparison: {exp1_name} and {exp2_name}")
+        else:
+            # Extract experiment names from image filenames
+            experiment_names = sorted(list(self._extract_experiment_names_from_images(all_images)))
+            
+            if len(experiment_names) < 2:
+                if self.verbose:
+                    print(f"Warning: Found fewer than 2 experiment folders: {experiment_names}")
+                if len(experiment_names) == 0:
+                    experiment_names = ["exp1", "exp2"]  # Fallback if no valid experiments found
+                elif len(experiment_names) == 1:
+                    experiment_names.append("exp2")  # Add a dummy second experiment
+            
+            # For backward compatibility with existing code, use the first two experiment names
+            exp1_name = experiment_names[0]
+            exp2_name = experiment_names[1] if len(experiment_names) > 1 else "exp2"
+        
+        if self.verbose:
+            print(f"Using experiment names for comparison: {exp1_name} and {exp2_name}")
         
         # Create dictionaries to store files by prefix and variable
         exp1_native_grid_files = {}
         exp2_native_grid_files = {}
         exp1_remapped_files = {}
         exp2_remapped_files = {}
-        
-        # Track experiment names for HTML output
-        exp1_name = "flux_33"
-        exp2_name = "flux_34"
         
         # Debug: List all files
         if self.verbose:
@@ -240,23 +513,21 @@ class FluxPlotter:
             is_remapped = f"_{self.resolution}deg" in file_name
             
             # Extract experiment name and variable name
-            if file_name.startswith("flux_33_"):
-                experiment = "flux_33"
+            if file_name.startswith(f"{exp1_name}_"):
                 if is_remapped:
                     # Extract variable name without resolution suffix
-                    var_name = file_name[len(f"{experiment}_"):].rsplit(f"_{self.resolution}deg", 1)[0]
+                    var_name = file_name[len(f"{exp1_name}_"):].rsplit(f"_{self.resolution}deg", 1)[0]
                     exp1_remapped_files[var_name] = img_file
                 else:
                     # Extract variable name
-                    var_name = file_name[len(f"{experiment}_"):-4]  # Remove .png extension
+                    var_name = file_name[len(f"{exp1_name}_"):-4]  # Remove .png extension
                     exp1_native_grid_files[var_name] = img_file
-            elif file_name.startswith("flux_34_"):
-                experiment = "flux_34"
+            elif file_name.startswith(f"{exp2_name}_"):
                 if is_remapped:
-                    var_name = file_name[len(f"{experiment}_"):].rsplit(f"_{self.resolution}deg", 1)[0]
+                    var_name = file_name[len(f"{exp2_name}_"):].rsplit(f"_{self.resolution}deg", 1)[0]
                     exp2_remapped_files[var_name] = img_file
                 else:
-                    var_name = file_name[len(f"{experiment}_"):-4]  # Remove .png extension
+                    var_name = file_name[len(f"{exp2_name}_"):-4]  # Remove .png extension
                     exp2_native_grid_files[var_name] = img_file
                     
         if self.verbose:
@@ -300,7 +571,6 @@ class FluxPlotter:
         <div class="pair">
             <div>
                 <h2>No native grid plots available</h2>
-                <p>No matching plot pairs were found in the images directory.</p>
             </div>
         </div>
 '''
@@ -318,7 +588,7 @@ class FluxPlotter:
         
         if self.verbose:
             print(f"Common remapped variables: {common_vars_remapped}")
-            
+        
         # Add higher resolution plots
         higher_res_plots_added = 0
         for var_name in common_vars_remapped:
@@ -332,11 +602,11 @@ class FluxPlotter:
         <div class="pair">
             <div>
                 <h2>{exp1_name} - {var_name} ({self.resolution}° grid)</h2>
-                <img src="images/{exp1_file.name}" alt="{exp1_name} {var_name} {self.resolution} degree">
+                <img src="images/{exp1_file.name}" alt="{exp1_name} {var_name}">
             </div>
             <div>
                 <h2>{exp2_name} - {var_name} ({self.resolution}° grid)</h2>
-                <img src="images/{exp2_file.name}" alt="{exp2_name} {var_name} {self.resolution} degree">
+                <img src="images/{exp2_file.name}" alt="{exp2_name} {var_name}">
             </div>
         </div>
 '''
@@ -348,7 +618,6 @@ class FluxPlotter:
         <div class="pair">
             <div>
                 <h2>No remapped plots available</h2>
-                <p>No remapped plot pairs were found in the images directory.</p>
             </div>
         </div>
 '''
@@ -356,36 +625,24 @@ class FluxPlotter:
         # Build the skipped files list
         skipped_files_html = ""
         for file in sorted(self.skipped_files):
-            skipped_files_html += f"<li>{file}</li>"
-
+            skipped_files_html += f"<li>{file}</li>\n"
+        
         # Add stats and skipped files section with proper escaping for JavaScript
         html_content += f'''
     </div>
 </div>
 
 <div class="stats">
-    <h2>Processing Statistics</h2>
-    <p>Total files processed: {len(self.plotted_files)}</p>
-    <div class="skipped">
-        <p><span class="toggle" onclick="toggleSkippedList()">Show/hide skipped files</span> (Total: {len(self.skipped_files)})</p>
-        <div id="skippedList" class="skipped-list">
-            <ul>
-                {skipped_files_html}
-            </ul>
-        </div>
+    <p>Files plotted: {len(self.plotted_files)}, Files skipped: {len(self.skipped_files)}</p>
+    <span class="toggle" onclick="toggleSkippedList()">Show/hide skipped files</span>
+    <div id="skippedList" class="skipped-list">
+        <ul>
+            {skipped_files_html}
+        </ul>
     </div>
 </div>
 
 <script>
-function toggleSkippedList() {{
-    var list = document.getElementById("skippedList");
-    if (list.style.display === "block") {{
-        list.style.display = "none";
-    }} else {{
-        list.style.display = "block";
-    }}
-}}
-
 function openPlotType(evt, plotType) {{
     var i, tabcontent, tablinks;
     tabcontent = document.getElementsByClassName("tabcontent");
@@ -399,6 +656,15 @@ function openPlotType(evt, plotType) {{
     document.getElementById(plotType).style.display = "block";
     evt.currentTarget.className += " active";
 }}
+
+function toggleSkippedList() {{
+    var list = document.getElementById("skippedList");
+    if (list.style.display === "block") {{
+        list.style.display = "none";
+    }} else {{
+        list.style.display = "block";
+    }}
+}}
 </script>
 </body>
 </html>'''
@@ -407,8 +673,6 @@ function openPlotType(evt, plotType) {{
         with open(self.output_dir / 'comparison.html', 'w') as f:
             f.write(html_content)
             
-        print(f"Comparison HTML generated at: {self.output_dir / 'comparison.html'}")
-    
     def reshape_1d_to_2d(self, data: np.ndarray, target_shape: tuple) -> np.ndarray:
         """Reshape 1D data to 2D based on target shape."""
         if len(data.shape) == 1:
@@ -803,6 +1067,25 @@ function openPlotType(evt, plotType) {{
         
         return output_filename
     
+    def _extract_experiment_names_from_images(self, all_images):
+        """Extract experiment names from image filenames."""
+        experiment_names = set()
+        for img_file in all_images:
+            file_name = img_file.name
+            # Extract experiment name from the file name prefix (before the variable name)
+            if '_' in file_name:
+                # Find the position of the first underscore followed by a common flux variable name
+                common_var_patterns = ['sst_', 'prec_', 'A_']
+                exp_name = file_name
+                for pattern in common_var_patterns:
+                    if pattern in file_name:
+                        exp_name = file_name.split(pattern, 1)[0]
+                        if exp_name.endswith('_'):
+                            exp_name = exp_name[:-1]  # Remove trailing underscore
+                        break
+                experiment_names.add(exp_name)
+        return experiment_names
+
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Process and visualize flux data')
@@ -813,6 +1096,7 @@ if __name__ == "__main__":
     parser.add_argument('--folder', type=str, default='', help='Process only this folder (default: all folders)')
     parser.add_argument('--timestep', type=int, default=1, help='Timestep to process (0-indexed, default: 1)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose debug output')
+    parser.add_argument('--compare', type=str, nargs=2, help='Specify two folders to compare in HTML report (e.g., --compare flux_33 rnffix)')
     args = parser.parse_args()
     
     plotter = FluxPlotter(
@@ -824,19 +1108,44 @@ if __name__ == "__main__":
         verbose=args.verbose
     )
     
+    # Keep track of processed folders for HTML comparison
+    processed_folders = []
+    
     if args.folder:
         if args.verbose:
             print(f"Processing folder: {args.folder}")
         plotter.process_folder(args.folder, max_files=args.max_files)
+        processed_folders.append(args.folder)
     else:
-        # Use generic experiment folder names instead of hardcoded values
-        experiment_folders = ['flux_33', 'flux_34']
+        # Dynamically detect available folders in the data directory
+        data_dir = Path(plotter.base_dir) / 'data'
+        
+        # If comparison folders are specified, only process those
+        if args.compare:
+            experiment_folders = args.compare
+        else:
+            experiment_folders = [folder.name for folder in data_dir.iterdir() if folder.is_dir()]
+        
+        if args.verbose:
+            print(f"Found experiment folders: {experiment_folders}")
+            
         for folder in experiment_folders:
             if args.verbose:
                 print(f"Processing folder: {folder}")
             plotter.process_folder(folder, max_files=args.max_files)
+            processed_folders.append(folder)
     
-    # Generate HTML comparison
-    plotter.generate_html()
+    # Generate HTML comparison with specified folders
+    if args.compare:
+        plotter.generate_html(comparison_folders=args.compare)
+    else:
+        # Use the processed folders for comparison
+        if len(processed_folders) >= 2:
+            plotter.generate_html(comparison_folders=processed_folders[:2])
+        elif len(processed_folders) == 1:
+            # For a single folder, pass just that folder
+            plotter.generate_html(comparison_folders=[processed_folders[0]])
+        else:
+            plotter.generate_html()
     if args.verbose:
         print(f"Comparison HTML generated at: {plotter.output_dir / 'comparison.html'}")
