@@ -683,9 +683,26 @@ function toggleSkippedList() {{
     def get_coordinates(self, folder: str, grid_ds: xr.Dataset, coord_type: str) -> Tuple[np.ndarray, np.ndarray]:
         """Get coordinates for a specific type from the grids dataset."""
         if coord_type == 'A':
-            lon = grid_ds['A096.lon'].values.reshape(1, -1)[0]
-            lat = grid_ds['A096.lat'].values.reshape(1, -1)[0]
+            # Dynamically find atmospheric grid variables based on available data
+            # Look for variables starting with 'A' and ending with '.lon' and '.lat'
+            a_vars = [var for var in grid_ds.variables if var.startswith('A') and (var.endswith('.lon') or var.endswith('.lat'))]
+            
+            # Find the specific A-grid prefix (e.g., A096 or A128) from the available variables
+            a_prefixes = set(var.split('.')[0] for var in a_vars)
+            
+            if not a_prefixes:
+                raise ValueError(f"No atmospheric grid variables found in dataset for folder {folder}. Available variables: {list(grid_ds.variables)}")
+                
+            # Use the first available A-grid prefix
+            a_prefix = sorted(list(a_prefixes))[0]
+            
+            if self.verbose:
+                print(f"Using atmospheric grid prefix: {a_prefix} for folder {folder}")
+                
+            lon = grid_ds[f'{a_prefix}.lon'].values.reshape(1, -1)[0]
+            lat = grid_ds[f'{a_prefix}.lat'].values.reshape(1, -1)[0]
             return lon, lat
+            
         elif coord_type == 'feom':
             lon = grid_ds['feom.lon'].values.reshape(1, -1)[0]
             lat = grid_ds['feom.lat'].values.reshape(1, -1)[0]
@@ -760,8 +777,33 @@ function toggleSkippedList() {{
             self.skipped_files.append(nc_file.name)
             return
             
-        # Get coordinates
-        lon, lat = self.get_coordinates(nc_file.parent.name, grid_ds, coord_type)
+        # Determine the appropriate coordinate type based on the file name
+        # This handles different grid types by looking at filename patterns
+        file_coord_type = coord_type
+        if '_ico_' in nc_file.name or '_oce_' in nc_file.name or 'fesom' in nc_file.name:
+            file_coord_type = 'feom'  # Ocean grid
+        elif '_OpenIFS_' in nc_file.name or '_ice_' in nc_file.name:
+            file_coord_type = 'A'     # Atmosphere grid
+        elif 'RnfA' in nc_file.name:
+            file_coord_type = 'RnfA'   # Runoff grid
+        
+        if self.verbose:
+            print(f"Using coordinate type '{file_coord_type}' for file {nc_file.name}")
+            
+        # Get coordinates for the specific grid type of this file
+        lon, lat = self.get_coordinates(nc_file.parent.name, grid_ds, file_coord_type)
+        
+        # Check that coordinates and data array sizes match
+        if lon.size != var_data.size and lat.size != var_data.size:
+            if self.verbose:
+                print(f"Warning: Coordinate size ({lon.size}) doesn't match data size ({var_data.size}) for {nc_file.name}")
+            
+            # If data is 1D but different size, we might have the wrong grid - skip this file
+            if var_data.ndim == 1:
+                if self.verbose:
+                    print(f"Incompatible grid sizes - skipping {nc_file.name}")
+                self.skipped_files.append(nc_file.name)
+                return
         
         # Replace NaNs with zeros
         var_data = np.nan_to_num(var_data, nan=0.0)
@@ -1032,19 +1074,106 @@ function toggleSkippedList() {{
                     cmap='viridis'
                 )
         else:
-            # For unstructured grid data, use scatter plot to show actual point data
-            # We want to see the raw data points without interpolation
-            cs = ax.scatter(
-                plot_lon, 
-                plot_lat, 
-                c=var_data, 
-                transform=ccrs.PlateCarree(),
-                cmap='viridis', 
-                s=1.0,  # Small point size to avoid overlapping
-                alpha=0.7
-            )
-            if self.verbose:
-                print("Using scatter plot for original point cloud data")
+            # For unstructured grid data, try to plot with scatter or fallback to other methods
+            try:
+                # First, check if arrays are compatible
+                if var_data.ndim > 1:
+                    # If data is multi-dimensional and doesn't match coordinates, reshape or skip
+                    if self.verbose:
+                        print(f"Multi-dimensional data with shape {var_data.shape}, attempting to flatten")
+                    var_data = var_data.flatten()
+                
+                # Ensure all arrays have the same length before plotting
+                if len(plot_lon) != len(plot_lat) or len(plot_lon) != len(var_data) or len(plot_lat) != len(var_data):
+                    if self.verbose:
+                        print(f"Array length mismatch: lon: {len(plot_lon)}, lat: {len(plot_lat)}, data: {len(var_data)}")
+                    
+                    # If arrays can't be made compatible, switch to a different plotting method
+                    if (var_data.ndim == 2 and var_data.shape[0] == var_data.shape[1]) or \
+                       (len(plot_lon) != len(var_data) and len(plot_lat) != len(var_data)):
+                        # If data is a 2D grid or arrays can't be matched, use imshow instead
+                        if self.verbose:
+                            print("Falling back to imshow instead of scatter due to incompatible array shapes")
+                            
+                        extent = [-180, 180, -90, 90]  # Default global extent
+                        cs = ax.imshow(
+                            var_data.reshape(-1, 1) if var_data.ndim == 1 else var_data, 
+                            origin='lower', 
+                            extent=extent,
+                            transform=ccrs.PlateCarree(),
+                            aspect='auto',
+                            cmap='viridis'
+                        )
+                    else:
+                        # Try to make arrays compatible by truncating to the minimum length
+                        min_length = min(len(plot_lon), len(plot_lat), len(var_data))
+                        if self.verbose:
+                            print(f"Resizing all arrays to minimum length: {min_length}")
+                        plot_lon = plot_lon[:min_length]
+                        plot_lat = plot_lat[:min_length]
+                        var_data = var_data[:min_length]
+                        
+                        # Check for NaN or invalid values in var_data
+                        valid_mask = np.isfinite(var_data)
+                        if not np.all(valid_mask):
+                            invalid_count = np.sum(~valid_mask)
+                            if self.verbose:
+                                print(f"Found {invalid_count} invalid values in data. Replacing with zeros.")
+                            var_data = np.where(valid_mask, var_data, 0.0)
+                        
+                        cs = ax.scatter(
+                            plot_lon, 
+                            plot_lat, 
+                            c=var_data, 
+                            transform=ccrs.PlateCarree(),
+                            cmap='viridis', 
+                            s=1.0,  # Small point size to avoid overlapping
+                            alpha=0.7
+                        )
+                else:
+                    # Arrays are already compatible
+                    # Check for NaN or invalid values in var_data
+                    valid_mask = np.isfinite(var_data)
+                    if not np.all(valid_mask):
+                        invalid_count = np.sum(~valid_mask)
+                        if self.verbose:
+                            print(f"Found {invalid_count} invalid values in data. Replacing with zeros.")
+                        var_data = np.where(valid_mask, var_data, 0.0)
+                    
+                    cs = ax.scatter(
+                        plot_lon, 
+                        plot_lat, 
+                        c=var_data, 
+                        transform=ccrs.PlateCarree(),
+                        cmap='viridis', 
+                        s=1.0,  # Small point size to avoid overlapping
+                        alpha=0.7
+                    )
+                    
+                if self.verbose:
+                    print("Using scatter plot for original point cloud data")
+                    
+            except Exception as e:
+                if self.verbose:
+                    print(f"Error in scatter plot: {str(e)}. Falling back to imshow.")
+                    
+                # Last resort fallback to imshow
+                extent = [-180, 180, -90, 90]  # Default global extent
+                var_data_display = var_data.copy()
+                
+                # Reshape data if needed
+                if var_data_display.ndim == 1:
+                    size = int(np.sqrt(len(var_data_display)))
+                    var_data_display = var_data_display[:size*size].reshape(size, size)
+                    
+                cs = ax.imshow(
+                    var_data_display, 
+                    origin='lower', 
+                    extent=extent,
+                    transform=ccrs.PlateCarree(),
+                    aspect='auto',
+                    cmap='viridis'
+                )
         
         # Calculate min/max values for colorbar outside of NaN values
         valid_data = var_data[~np.isnan(var_data)]
